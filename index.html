@@ -9,7 +9,7 @@
 packages = [
   "geopandas",
   "folium",
-  "maplotlib"
+  "matplotlib"
 ]
 [[runtimes]]
 src = "https://ryanking13.github.io/geopandas-pyodide-test/pyodide/pyodide.js"
@@ -20,35 +20,45 @@ lang = "python"
     <body>
       <div id="folium" style="width: 100%; height: 100%"></div>
       <py-script output="folium">
+# https://geopandas.org/en/stable/gallery/polygon_plotting_with_folium.html
+import geopandas as gpd
 import folium
-import json
-import pandas as pd
+import matplotlib.pyplot as plt
 
-from pyodide.http import open_url
+path = gpd.datasets.get_path('nybb')
+df = gpd.read_file(path)
+df = df.to_crs(epsg=4326)
 
-url = (
-    "https://raw.githubusercontent.com/python-visualization/folium/master/examples/data"
-)
-state_geo = f"{url}/us-states.json"
-state_unemployment = f"{url}/US_Unemployment_Oct2012.csv"
-state_data = pd.read_csv(open_url(state_unemployment))
-geo_json = json.loads(open_url(state_geo).read())
+m = folium.Map(location=[40.70, -73.94], zoom_start=10, tiles='CartoDB positron')
+for _, r in df.iterrows():
+    # Without simplifying the representation of each borough,
+    # the map might not be displayed
+    sim_geo = gpd.GeoSeries(r['geometry']).simplify(tolerance=0.001)
+    geo_j = sim_geo.to_json()
+    geo_j = folium.GeoJson(data=geo_j,
+                           style_function=lambda x: {'fillColor': 'orange'})
+    folium.Popup(r['BoroName']).add_to(geo_j)
+    geo_j.add_to(m)
 
-m = folium.Map(location=[48, -102], zoom_start=3)
+# Project to NAD83 projected crs
+df = df.to_crs(epsg=2263)
 
-folium.Choropleth(
-    geo_data=geo_json,
-    name="choropleth",
-    data=state_data,
-    columns=["State", "Unemployment"],
-    key_on="feature.id",
-    fill_color="YlGn",
-    fill_opacity=0.7,
-    line_opacity=0.2,
-    legend_name="Unemployment Rate (%)",
-).add_to(m)
+# Access the centroid attribute of each polygon
+df['centroid'] = df.centroid
 
-folium.LayerControl().add_to(m)
+# Project to WGS84 geographic crs
+
+# geometry (active) column
+df = df.to_crs(epsg=4326)
+
+# Centroid column
+df['centroid'] = df['centroid'].to_crs(epsg=4326)
+
+for _, r in df.iterrows():
+    lat = r['centroid'].y
+    lon = r['centroid'].x
+    folium.Marker(location=[lat, lon],
+                  popup='length: {} <br> area: {}'.format(r['Shape_Leng'], r['Shape_Area'])).add_to(m)
 
 m
     </body>
